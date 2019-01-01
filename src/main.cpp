@@ -19,6 +19,8 @@ constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
 
+double mph2ms(double x) { return x * 0.44704; }
+
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
 // else the empty string "" will be returned.
@@ -39,6 +41,15 @@ double polyeval(Eigen::VectorXd coeffs, double x) {
   double result = 0.0;
   for (int i = 0; i < coeffs.size(); i++) {
     result += coeffs[i] * pow(x, i);
+  }
+  return result;
+}
+
+// Evaluate derivative of a polynomial.
+double poly_derivative_eval(Eigen::VectorXd coeffs, double x) {
+  double result = 0.0;
+  for (int i = 1 ; i < coeffs.size(); i++) {
+    result += (i) * coeffs[i] * pow(x, (i-1));
   }
   return result;
 }
@@ -119,6 +130,27 @@ int main() {
           vector<double> trans_ptsx;
           vector<double> trans_ptsy;
           g2v_coordinate_transform(trans_ptsx, trans_ptsy, ptsx, ptsy, px, py, psi);
+
+          /* Fit a polynomial to transformed waypoints. */
+          Eigen::VectorXd xvals = Eigen::Map<Eigen::VectorXd>(trans_ptsx.data(), trans_ptsx.size());
+          Eigen::VectorXd yvals = Eigen::Map<Eigen::VectorXd>(trans_ptsy.data(), trans_ptsy.size());
+          auto coeffs = polyfit(xvals, yvals, 3);
+          //cout << "coeffs" << coeffs << endl;
+
+          /* vehical state， since we are using vehical coordinate, so our state x,y,psi are always 0. */
+          double v_x = 0;
+          double v_y = 0;
+          double v_psi = 0;
+          double v_v = mph2ms(v);
+          double cte = v_y - polyeval(coeffs, v_x);
+          double epsi = psi - atan(poly_derivative_eval(coeffs, v_x));
+          while (epsi > M_PI) epsi -= 2.*M_PI;
+          while (epsi <-M_PI) epsi += 2.*M_PI;
+
+          Eigen::VectorXd state(6);
+          state << v_x, v_y, v_psi, v_v, cte, epsi;
+
+          auto vars = mpc.Solve(state, coeffs);
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
