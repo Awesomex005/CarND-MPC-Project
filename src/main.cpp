@@ -9,6 +9,8 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "MPC.h"
 
+using namespace std;
+
 // for convenience
 using json = nlohmann::json;
 
@@ -65,6 +67,18 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   return result;
 }
 
+void g2v_coordinate_transform(vector<double> &trans_ptsx, vector<double> &trans_ptsy,
+                              vector<double> &ptsx, vector<double> &ptsy, double px, double py, double psi){
+  double trans_ptsx_;
+  double trans_ptsy_;
+  for(int i=0; i<ptsx.size(); i++){
+      trans_ptsx_ =      cos(psi)*(ptsx[i] - px) + sin(psi)*(ptsy[i] - py);
+      trans_ptsy_ = (-1)*sin(psi)*(ptsx[i] - px) + cos(psi)*(ptsy[i] - py);
+      trans_ptsx.push_back(trans_ptsx_);
+      trans_ptsy.push_back(trans_ptsy_);
+  }
+}
+
 int main() {
   uWS::Hub h;
 
@@ -101,13 +115,18 @@ int main() {
           double steer_value;
           double throttle_value;
 
+          /* Transform waypoints from global coordinate to vehical coordinate. */
+          vector<double> trans_ptsx;
+          vector<double> trans_ptsy;
+          g2v_coordinate_transform(trans_ptsx, trans_ptsy, ptsx, ptsy, px, py, psi);
+
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
           // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
 
-          //Display the MPC predicted trajectory 
+          //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
 
@@ -118,8 +137,8 @@ int main() {
           msgJson["mpc_y"] = mpc_y_vals;
 
           //Display the waypoints/reference line
-          vector<double> next_x_vals;
-          vector<double> next_y_vals;
+          vector<double> next_x_vals = trans_ptsx;
+          vector<double> next_y_vals = trans_ptsy;
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
