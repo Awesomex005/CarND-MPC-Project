@@ -11,8 +11,22 @@
 
 using namespace std;
 
+#define LATENCY_IN_MS 100
+
 // for convenience
 using json = nlohmann::json;
+
+// This value assumes the model presented in the classroom is used.
+//
+// It was obtained by measuring the radius formed by running the vehicle in the
+// simulator around in a circle with a constant steering angle and velocity on a
+// flat terrain.
+//
+// Lf was tuned until the the radius formed by the simulating the model
+// presented in the classroom matched the previous radius.
+//
+// This is the length from front to CoG that has a similar radius.
+const double Lf = 2.67;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -102,7 +116,7 @@ int main() {
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
     string sdata = string(data).substr(0, length);
-    cout << sdata << endl;
+    //cout << sdata << endl;
     if (sdata.size() > 2 && sdata[0] == '4' && sdata[1] == '2') {
       string s = hasData(sdata);
       if (s != "") {
@@ -116,6 +130,8 @@ int main() {
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
+          double delta = j[1]["steering_angle"];
+          double a = j[1]["throttle"];
 
           /*
           * TODO: Calculate steering angle and throttle using MPC.
@@ -138,17 +154,30 @@ int main() {
           //cout << "coeffs" << coeffs << endl;
 
           /* vehical state， since we are using vehical coordinate, so our state x,y,psi are always 0. */
-          double v_x = 0;
-          double v_y = 0;
-          double v_psi = 0;
-          double v_v = mph2ms(v);
-          double cte = v_y - polyeval(coeffs, v_x);
-          double epsi = psi - atan(poly_derivative_eval(coeffs, v_x));
-          while (epsi > M_PI) epsi -= 2.*M_PI;
-          while (epsi <-M_PI) epsi += 2.*M_PI;
+          double x0 = 0;
+          double y0 = 0;
+          double psi0 = 0;
+          double v0 = mph2ms(v);
+          double delta0 = delta;
+          double a0 = a;
+          double f0 = polyeval(coeffs, x0);
+          double psides0 = atan(poly_derivative_eval(coeffs, x0));
+          double cte0 = y0 - f0;
+          double epsi0 = psi0 - psides0;
+          while (epsi0 > M_PI) epsi0 -= 2.*M_PI;
+          while (epsi0 <-M_PI) epsi0 += 2.*M_PI;
+
+          /* Take account of lantency, predict the state before actuator take effect. */
+          double latency = LATENCY_IN_MS*1.0 / 1000.0; // ms to s
+          double x1 = (x0 + v0 * cos(psi0) * latency);
+          double y1 = (y0 + v0 * sin(psi0) * latency);
+          double psi1 = (psi0 + v0 * delta0 / Lf * latency);
+          double v1 = (v0 + a0 * latency);
+          double cte1 = (y0 - f0 + v0 * sin(epsi0) * latency);
+          double epsi1 = (psi0 - psides0 + v0 * delta0 / Lf * latency);
 
           Eigen::VectorXd state(6);
-          state << v_x, v_y, v_psi, v_v, cte, epsi;
+          state << x1, y1, psi1, v1, cte1, epsi1;
 
           //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
@@ -156,6 +185,7 @@ int main() {
 
           auto vars = mpc.Solve(state, coeffs, mpc_x_vals, mpc_y_vals);
 
+          // the simulator use a steer_valute between -1 ~ 1, and turn left is map to negative vaule.
           steer_value = (-1) * vars[0]/deg2rad(25.0);
           throttle_value = vars[1];
 
@@ -173,7 +203,11 @@ int main() {
 
           //Display the waypoints/reference line
           vector<double> next_x_vals = trans_ptsx;
-          vector<double> next_y_vals = trans_ptsy;
+          vector<double> next_y_vals;
+
+          for(int i=0; i<next_x_vals.size(); i++){
+            next_y_vals.push_back(polyeval(coeffs, next_x_vals[i]));
+          }
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
@@ -183,7 +217,7 @@ int main() {
 
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
+          //std::cout << msg << std::endl;
           // Latency
           // The purpose is to mimic real driving conditions where
           // the car does actuate the commands instantly.
@@ -193,7 +227,7 @@ int main() {
           //
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
-          //this_thread::sleep_for(chrono::milliseconds(100));
+          //this_thread::sleep_for(chrono::milliseconds(LATENCY_IN_MS));
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {
