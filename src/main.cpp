@@ -116,7 +116,7 @@ int main() {
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
     string sdata = string(data).substr(0, length);
-    //cout << sdata << endl;
+    cout << sdata << endl;
     if (sdata.size() > 2 && sdata[0] == '4' && sdata[1] == '2') {
       string s = hasData(sdata);
       if (s != "") {
@@ -133,6 +133,21 @@ int main() {
           double delta = j[1]["steering_angle"];
           double a = j[1]["throttle"];
 
+          double x0 = px;
+          double y0 = py;
+          double psi0 = psi;
+          double v0 = mph2ms(v);
+          double delta0 = delta;
+          double a0 = a;
+
+          /* Take account of lantency, predict the state before actuator take effect. */
+          double latency = LATENCY_IN_MS*1.0 / 1000.0; // ms to s
+          //double latency = 0.0;
+          double x1 = (x0 + v0 * cos(psi0) * latency);
+          double y1 = (y0 + v0 * sin(psi0) * latency);
+          double psi1 = (psi0 + v0 * delta0 / Lf * latency);
+          double v1 = (v0 + a0 * latency);
+
           /*
           * TODO: Calculate steering angle and throttle using MPC.
           *
@@ -145,7 +160,7 @@ int main() {
           /* Transform waypoints from global coordinate to vehical coordinate. */
           vector<double> trans_ptsx;
           vector<double> trans_ptsy;
-          g2v_coordinate_transform(trans_ptsx, trans_ptsy, ptsx, ptsy, px, py, psi);
+          g2v_coordinate_transform(trans_ptsx, trans_ptsy, ptsx, ptsy, x1, y1, psi1);
 
           /* Fit a polynomial to transformed waypoints. */
           Eigen::VectorXd xvals = Eigen::Map<Eigen::VectorXd>(trans_ptsx.data(), trans_ptsx.size());
@@ -154,30 +169,17 @@ int main() {
           //cout << "coeffs" << coeffs << endl;
 
           /* vehical state， since we are using vehical coordinate, so our state x,y,psi are always 0. */
-          double x0 = 0;
-          double y0 = 0;
-          double psi0 = 0;
-          double v0 = mph2ms(v);
-          double delta0 = delta;
-          double a0 = a;
-          double f0 = polyeval(coeffs, x0);
-          double psides0 = atan(poly_derivative_eval(coeffs, x0));
-          double cte0 = y0 - f0;
-          double epsi0 = psi0 - psides0;
-          while (epsi0 > M_PI) epsi0 -= 2.*M_PI;
-          while (epsi0 <-M_PI) epsi0 += 2.*M_PI;
-
-          /* Take account of lantency, predict the state before actuator take effect. */
-          double latency = LATENCY_IN_MS*1.0 / 1000.0; // ms to s
-          double x1 = (x0 + v0 * cos(psi0) * latency);
-          double y1 = (y0 + v0 * sin(psi0) * latency);
-          double psi1 = (psi0 + v0 * delta0 / Lf * latency);
-          double v1 = (v0 + a0 * latency);
-          double cte1 = (y0 - f0 + v0 * sin(epsi0) * latency);
-          double epsi1 = (psi0 - psides0 + v0 * delta0 / Lf * latency);
+          double v_x = 0;
+          double v_y = 0;
+          double v_psi = 0;
+          double v_v = v1;
+          double cte = v_y - polyeval(coeffs, v_x);
+          double epsi = v_psi - atan(poly_derivative_eval(coeffs, v_x));
+          //while (epsi > M_PI) epsi -= 2.*M_PI;
+          //while (epsi <-M_PI) epsi += 2.*M_PI;
 
           Eigen::VectorXd state(6);
-          state << x1, y1, psi1, v1, cte1, epsi1;
+          state << v_x, v_y, v_psi, v_v, cte, epsi;
 
           //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
@@ -227,7 +229,7 @@ int main() {
           //
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
-          //this_thread::sleep_for(chrono::milliseconds(LATENCY_IN_MS));
+          this_thread::sleep_for(chrono::milliseconds(LATENCY_IN_MS));
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {

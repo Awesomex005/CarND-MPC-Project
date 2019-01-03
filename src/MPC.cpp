@@ -8,7 +8,7 @@ using CppAD::AD;
 
 // TODO: Set the timestep length and duration
 size_t N = 10; //20 ;
-double dt = 0.1; //0.05 ;
+double dt = 1; //0.05 ;
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -24,7 +24,7 @@ const double Lf = 2.67;
 
 
 static double mph2ms(double x) { return x * 0.44704; }
-static double ref_v = mph2ms(30);
+static double ref_v = mph2ms(20);
 
 // The solver takes all the state variables and actuator
 // variables in a singular vector. Thus, we should to establish
@@ -280,7 +280,7 @@ std::vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs, std::
   auto cost = solution.obj_value;
   std::cout << "Cost " << cost << std::endl;
 
-  for(int i=0; i<N; i++){
+  for(int i=1; i<N; i++){
     mpc_x.push_back( solution.x[x_start + i] );
     mpc_y.push_back( solution.x[y_start + i] );
   }
