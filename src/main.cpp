@@ -107,6 +107,8 @@ void g2v_coordinate_transform(vector<double> &trans_ptsx, vector<double> &trans_
 int main() {
   uWS::Hub h;
 
+  static double elapsed_time_in_ms = LATENCY_IN_MS;
+
   // MPC is initialized here!
   MPC mpc;
 
@@ -123,6 +125,9 @@ int main() {
         auto j = json::parse(s);
         string event = j[0].get<string>();
         if (event == "telemetry") {
+
+          std::chrono::time_point<std::chrono::high_resolution_clock> p0 = std::chrono::high_resolution_clock::now();
+
           // j[1] is the data JSON object
           vector<double> ptsx = j[1]["ptsx"];
           vector<double> ptsy = j[1]["ptsy"];
@@ -137,10 +142,17 @@ int main() {
           double y0 = py;
           double psi0 = psi;
           double v0 = mph2ms(v);
-          double delta0 = delta;
+          /*
+           * the telemetry steering_angle from the simulator is in range [-deg2rad(25), deg2rad(25],
+           * and turning left is mapped to negative vaule!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+           * !!!!!!!!!!!!!!!!!
+           * !!!!!!!!!!
+           * God dxxx
+           */
+          double delta0 = (-1)*delta;
           double a0 = a;
 
-          /* Take account of lantency, predict the state before actuator take effect. */
+          /* Take account of actuator lantency, predict the state before mpc computation. */
           double latency = LATENCY_IN_MS*1.0 / 1000.0; // ms to s
           //double latency = 0.0;
           double x1 = (x0 + v0 * cos(psi0) * latency);
@@ -185,9 +197,9 @@ int main() {
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
 
-          auto vars = mpc.Solve(state, coeffs, mpc_x_vals, mpc_y_vals);
+          auto vars = mpc.Solve(state, coeffs, xvals[xvals.size()-1], yvals[yvals.size()-1], mpc_x_vals, mpc_y_vals);
 
-          // the simulator use a steer_valute between -1 ~ 1, and turn left is map to negative vaule.
+          // the simulator use a steer_valute between -1 ~ 1, and turning left is mapped to negative vaule.
           steer_value = (-1) * vars[0]/deg2rad(25.0);
           throttle_value = vars[1];
 
@@ -204,11 +216,12 @@ int main() {
           msgJson["mpc_y"] = mpc_y_vals;
 
           //Display the waypoints/reference line
-          vector<double> next_x_vals = trans_ptsx;
+          vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          for(int i=0; i<next_x_vals.size(); i++){
-            next_y_vals.push_back(polyeval(coeffs, next_x_vals[i]));
+          for(int i=0; i<25; i++){
+            next_x_vals.push_back(i*2.5);
+            next_y_vals.push_back(polyeval(coeffs, i*2.5));
           }
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
@@ -219,7 +232,7 @@ int main() {
 
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          //std::cout << msg << std::endl;
+          std::cout << msg << std::endl;
           // Latency
           // The purpose is to mimic real driving conditions where
           // the car does actuate the commands instantly.
@@ -230,6 +243,11 @@ int main() {
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
           this_thread::sleep_for(chrono::milliseconds(LATENCY_IN_MS));
+
+          std::chrono::time_point<std::chrono::high_resolution_clock> p1 = std::chrono::high_resolution_clock::now();
+          elapsed_time_in_ms = (double)std::chrono::duration_cast<std::chrono::microseconds>(p1 - p0).count() / 1000;
+          cout << "elapsed: " << elapsed_time_in_ms << "ms" << endl;
+
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {

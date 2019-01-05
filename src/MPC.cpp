@@ -7,8 +7,8 @@
 using CppAD::AD;
 
 // TODO: Set the timestep length and duration
-size_t N = 10; //20 ;
-double dt = 1; //0.05 ;
+size_t N = 15; //20 ;
+double dt = 0.1; //0.05 ;
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -24,7 +24,7 @@ const double Lf = 2.67;
 
 
 static double mph2ms(double x) { return x * 0.44704; }
-static double ref_v = mph2ms(20);
+static double ref_v = mph2ms(60);
 
 // The solver takes all the state variables and actuator
 // variables in a singular vector. Thus, we should to establish
@@ -56,11 +56,22 @@ static AD<double> poly_derivative_eval(Eigen::VectorXd coeffs, AD<double> x) {
   return result;
 }
 
+static AD<double> cardesian_distance(AD<double> x1, AD<double> y1, double x2, double y2){
+  AD<double> result = 0.0;
+  result = CppAD::sqrt(CppAD::pow(x2-x1, 2) + CppAD::pow(y2-y1, 2));
+}
+
 class FG_eval {
  public:
   Eigen::VectorXd coeffs;
+  double target_x;
+  double target_y;
   // Coefficients of the fitted polynomial.
-  FG_eval(Eigen::VectorXd coeffs) { this->coeffs = coeffs; }
+  FG_eval(Eigen::VectorXd coeffs, double target_x, double target_y){
+    this->coeffs = coeffs;
+    this->target_x = target_x;
+    this->target_y = target_y;
+  }
 
   typedef CPPAD_TESTVECTOR(AD<double>) ADvector;
   // `fg` is a vector containing the cost and constraints.
@@ -74,22 +85,30 @@ class FG_eval {
     // TODO: Define the cost related the reference state and
     // any anything you think may be beneficial.
     for(int t=0; t<N; t++){
-      fg[0] += CppAD::pow(vars[cte_start + t], 2);
-      fg[0] += CppAD::pow(vars[epsi_start + t], 2);
-      fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2);
+      fg[0] +=  CppAD::pow(vars[cte_start + t], 2);
+      fg[0] +=  CppAD::pow(vars[epsi_start + t], 2);
+      fg[0] +=  CppAD::pow(vars[v_start + t] - ref_v, 2);
     }
 
     // Minimize the use of actuators.
     for(int t=0; t<N-1; t++){
-      fg[0] += CppAD::pow(vars[delta_start + t], 2);
-      fg[0] += CppAD::pow(vars[a_start + t], 2);
+      fg[0] += 2000 * CppAD::pow(vars[delta_start + t], 2);
+      fg[0] += 10 * CppAD::pow(vars[a_start + t], 2);
     }
 
     // Minimize actuators change rate
     for(int t=0; t<N-2; t++){
-      fg[0] += 32 * CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
-      fg[0] += 32 * CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
+      fg[0] += 2000 * CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
+      fg[0] += 5 * CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
     }
+
+    /*
+    for(int t=1; t<N; t++){
+      AD<double> dist = cardesian_distance(vars[x_start + t], vars[y_start + t], target_x, target_y);
+      fg[0] += dist;
+    }
+    */
+
     //
     // Setup Constraints
     //
@@ -165,7 +184,7 @@ class FG_eval {
 MPC::MPC() {}
 MPC::~MPC() {}
 
-std::vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs, std::vector<double>& mpc_x, std::vector<double>& mpc_y) {
+std::vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs, double target_x, double target_y, std::vector<double>& mpc_x, std::vector<double>& mpc_y) {
   size_t i;
   typedef CPPAD_TESTVECTOR(double) Dvector;
 
@@ -246,7 +265,7 @@ std::vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs, std::
   constraints_upperbound[epsi_start] = epsi;
 
   // Object that computes objective and constraints
-  FG_eval fg_eval(coeffs);
+  FG_eval fg_eval(coeffs, target_x, target_y);
 
   // options
   std::string options;
@@ -261,7 +280,7 @@ std::vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs, std::
   // NOTE: Currently the solver has a maximum time limit of 0.5 seconds.
   // Change this as you see fit.
 
-  //options += "Numeric max_cpu_time          0.5\n";
+  options += "Numeric max_cpu_time          0.5\n";
 
   // place to return solution
   CppAD::ipopt::solve_result<Dvector> solution;
