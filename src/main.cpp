@@ -11,7 +11,7 @@
 
 using namespace std;
 
-#define LATENCY_IN_MS 100
+#define LATENCY_IN_MS 120
 
 // for convenience
 using json = nlohmann::json;
@@ -107,8 +107,6 @@ void g2v_coordinate_transform(vector<double> &trans_ptsx, vector<double> &trans_
 int main() {
   uWS::Hub h;
 
-  static double elapsed_time_in_ms = LATENCY_IN_MS;
-
   // MPC is initialized here!
   MPC mpc;
 
@@ -118,7 +116,7 @@ int main() {
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
     string sdata = string(data).substr(0, length);
-    cout << sdata << endl;
+    //cout << sdata << endl;
     if (sdata.size() > 2 && sdata[0] == '4' && sdata[1] == '2') {
       string s = hasData(sdata);
       if (s != "") {
@@ -209,6 +207,8 @@ int main() {
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
 
+          std::cout << "steering_angle: " << steer_value << " throttle: " << throttle_value << std::endl;
+
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
 
@@ -232,7 +232,12 @@ int main() {
 
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
+          //std::cout << msg << std::endl;
+
+          double elapsed_time_in_ms = LATENCY_IN_MS;
+          std::chrono::time_point<std::chrono::high_resolution_clock> p1 = std::chrono::high_resolution_clock::now();
+          elapsed_time_in_ms = (double)std::chrono::duration_cast<std::chrono::microseconds>(p1 - p0).count() / 1000;
+
           // Latency
           // The purpose is to mimic real driving conditions where
           // the car does actuate the commands instantly.
@@ -242,11 +247,13 @@ int main() {
           //
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
-          this_thread::sleep_for(chrono::milliseconds(LATENCY_IN_MS));
+          this_thread::sleep_for(chrono::milliseconds(100));
 
-          std::chrono::time_point<std::chrono::high_resolution_clock> p1 = std::chrono::high_resolution_clock::now();
-          elapsed_time_in_ms = (double)std::chrono::duration_cast<std::chrono::microseconds>(p1 - p0).count() / 1000;
-          cout << "elapsed: " << elapsed_time_in_ms << "ms" << endl;
+          this_thread::sleep_for(chrono::milliseconds(LATENCY_IN_MS - 100 - (int)elapsed_time_in_ms));
+
+          std::chrono::time_point<std::chrono::high_resolution_clock> p2 = std::chrono::high_resolution_clock::now();
+          elapsed_time_in_ms = (double)std::chrono::duration_cast<std::chrono::microseconds>((p2-p1) + (p1 -p0)).count() / 1000;
+          cout << "elapsed: " << elapsed_time_in_ms << "ms" << endl << endl;
 
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
